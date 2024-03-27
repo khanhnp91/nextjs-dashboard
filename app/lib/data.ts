@@ -1,4 +1,40 @@
-import { sql } from '@vercel/postgres';
+import { Client } from 'pg';
+
+const client = new Client({
+  host: process.env.POSTGRES_HOST,
+  port: 5432,
+  database: process.env.POSTGRES_DATABASE,
+  user: process.env.POSTGRES_USER,
+  password: process.env.POSTGRES_PASSWORD,
+});
+client.connect();
+
+type SqlResult<T> = { rows: T[] };
+export async function sql<T = any>(textFragments: any, ...valueFragments: any[]): Promise<SqlResult<T>> {
+  const values = (values: any, { columns = Object.keys(values) } = {}) => {
+    if (!Array.isArray(values)) {
+      values = columns.map(column => values[column]);
+    }
+    return (valuePosition: any) => ({
+      text: Array.apply(null, { length: values.length } as any).map(() => '$' + (++valuePosition)).join(', '),
+      values
+    })
+  };
+  const query = {
+    text: textFragments[0],
+    values: []
+  };
+  valueFragments.forEach((valueFragment, i) => {
+    if (typeof valueFragment !== 'function') {
+      valueFragment = values([valueFragment]);
+    }
+    valueFragment = valueFragment(query.values.length);
+    query.text += valueFragment.text + textFragments[i + 1];
+    query.values = query.values.concat(valueFragment.values);
+  });
+  return client.query(query.text, query.values) as any;
+}
+
 import {
   CustomerField,
   CustomersTableType,
